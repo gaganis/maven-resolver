@@ -27,7 +27,7 @@ import org.eclipse.aether.collection.CollectRequest;
 import org.eclipse.aether.util.ConfigUtils;
 import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 
-class Args
+final class Args
 {
 
     final RepositorySystemSession session;
@@ -42,7 +42,7 @@ class Args
 
     final NodeStack nodes;
 
-    final DefaultDependencyCollectionContext collectionContext;
+    final DefaultDependencyCollectionContext collectionContext; // unused ???
 
     final DefaultVersionFilterContext versionContext;
 

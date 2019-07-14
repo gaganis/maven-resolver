@@ -36,10 +36,9 @@ import static java.util.Objects.requireNonNull;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -147,9 +146,8 @@ public class DefaultDependencyCollector
     {
         int numThreads = ConfigUtils.getInteger( session, DEFAULT_THREADS, CONFIG_PROP_THREADS );
         LOGGER.debug( "{} = {} ", CONFIG_PROP_THREADS, numThreads );
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                numThreads, numThreads, 3L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<Runnable>(), new WorkerThreadFactory( "artifact-descriptor-resolver" ) );
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newCachedThreadPool(
+                new WorkerThreadFactory( "artifact-descriptor-resolver" ) );
         try
         {
             return collectDependenciesWithExecutor( session, request, executor );
@@ -517,7 +515,7 @@ public class DefaultDependencyCollector
         }
     }
 
-    private boolean processDependencyVersion( DependencyContext dc )
+    private boolean processDependencyVersion( DependencyContext dc ) // warning - returned value is never used !!!
     {
         Args args = dc.context.getArgs();
         Results results = dc.context.getResults();

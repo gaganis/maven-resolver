@@ -20,11 +20,11 @@ package org.eclipse.aether.internal.impl.collect;
  */
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -61,23 +61,27 @@ final class DataPool
 
     private static final String DESCRIPTORS = DataPool.class.getName() + "$Descriptors";
 
-    public static final Future<ArtifactDescriptorResult> NO_DESCRIPTOR =
+    static final Future<ArtifactDescriptorResult> NO_DESCRIPTOR =
         new FutureResult<>( new ArtifactDescriptorResult( new ArtifactDescriptorRequest() ) );
 
-    private ObjectPool<Artifact> artifacts;
+    private final ObjectPool<Artifact> artifacts;
 
-    private ObjectPool<Dependency> dependencies;
+    private final ObjectPool<Dependency> dependencies;
 
-    private Map<Object, Descriptor> descriptors;
+    private final Map<Object, Descriptor> descriptors;
 
-    private Map<Object, Constraint> constraints = new HashMap<>();
+    private final Map<Object, Constraint> constraints = new ConcurrentHashMap<>();
 
-    private Map<Object, List<DependencyNode>> nodes = new HashMap<>( 256 );
+    private final Map<Object, List<DependencyNode>> nodes = new ConcurrentHashMap<>( 256 );
 
     @SuppressWarnings( "unchecked" )
     DataPool( RepositorySystemSession session )
     {
         RepositoryCache cache = session.getCache();
+
+        ObjectPool<Artifact> artifacts = null;
+        ObjectPool<Dependency> dependencies = null;
+        Map<Object, Descriptor> descriptors = null;
 
         if ( cache != null )
         {
@@ -95,6 +99,8 @@ final class DataPool
             }
         }
 
+        this.artifacts = artifacts;
+
         if ( dependencies == null )
         {
             dependencies = new ObjectPool<>();
@@ -104,6 +110,8 @@ final class DataPool
             }
         }
 
+        this.dependencies = dependencies;
+
         if ( descriptors == null )
         {
             descriptors = Collections.synchronizedMap( new WeakHashMap<Object, Descriptor>( 256 ) );
@@ -112,24 +120,26 @@ final class DataPool
                 cache.put( session, DESCRIPTORS, descriptors );
             }
         }
+
+        this.descriptors = descriptors;
     }
 
-    public Artifact intern( Artifact artifact )
+    Artifact intern( Artifact artifact )
     {
         return artifacts.intern( artifact );
     }
 
-    public Dependency intern( Dependency dependency )
+    Dependency intern( Dependency dependency )
     {
         return dependencies.intern( dependency );
     }
 
-    public Object toKey( ArtifactDescriptorRequest request )
+    Object toKey( ArtifactDescriptorRequest request )
     {
         return request.getArtifact();
     }
 
-    public Future<ArtifactDescriptorResult> getDescriptor( Object key, ArtifactDescriptorRequest request )
+    Future<ArtifactDescriptorResult> getDescriptor( Object key, ArtifactDescriptorRequest request )
     {
         Descriptor descriptor = descriptors.get( key );
         if ( descriptor != null )
@@ -139,22 +149,22 @@ final class DataPool
         return null;
     }
 
-    public void putDescriptor( Object key, Future<ArtifactDescriptorResult> futureResult )
+    void putDescriptor( Object key, Future<ArtifactDescriptorResult> futureResult )
     {
         descriptors.put( key, new GoodDescriptor( futureResult ) );
     }
 
-    public void putDescriptor( Object key, ArtifactDescriptorException exception )
+    void putDescriptor( Object key, ArtifactDescriptorException exception ) // unused param ???, type better method name
     {
         descriptors.put( key, BadDescriptor.INSTANCE );
     }
 
-    public Object toKey( VersionRangeRequest request )
+    Object toKey( VersionRangeRequest request )
     {
         return new ConstraintKey( request );
     }
 
-    public VersionRangeResult getConstraint( Object key, VersionRangeRequest request )
+    VersionRangeResult getConstraint( Object key, VersionRangeRequest request )
     {
         Constraint constraint = constraints.get( key );
         if ( constraint != null )
@@ -164,33 +174,33 @@ final class DataPool
         return null;
     }
 
-    public void putConstraint( Object key, VersionRangeResult result )
+    void putConstraint( Object key, VersionRangeResult result )
     {
         constraints.put( key, new Constraint( result ) );
     }
 
-    public Object toKey( Artifact artifact, DefaultDependencyCollectionContext context )
+    Object toKey( Artifact artifact, DefaultDependencyCollectionContext context )
     {
         return new GraphKey( artifact, context.getRepositories(), context.getDepSelector(),
                              context.getDepManager(), context.getDepTraverser(), context.getVerFilter() );
     }
 
-    public List<DependencyNode> getChildren( Object key )
+    List<DependencyNode> getChildren( Object key )
     {
         return nodes.get( key );
     }
 
-    public void putChildren( Object key, List<DependencyNode> children )
+    void putChildren( Object key, List<DependencyNode> children )
     {
         nodes.put( key, children );
     }
 
-    abstract static class Descriptor
+    private abstract static class Descriptor
     {
         public abstract Future<ArtifactDescriptorResult> toResult( ArtifactDescriptorRequest request );
     }
 
-    static final class GoodDescriptor
+    private static final class GoodDescriptor
         extends Descriptor
     {
         Future<ArtifactDescriptorResult> futureResult;
@@ -247,7 +257,7 @@ final class DataPool
         }
     }
 
-    static final class BadDescriptor
+    private static final class BadDescriptor
         extends Descriptor
     {
         static final BadDescriptor INSTANCE = new BadDescriptor();
@@ -258,7 +268,7 @@ final class DataPool
         }
     }
 
-    static final class Constraint
+    private static final class Constraint
     {
         final VersionRepo[] repositories;
 
@@ -276,7 +286,7 @@ final class DataPool
             }
         }
 
-        public VersionRangeResult toResult( VersionRangeRequest request )
+        VersionRangeResult toResult( VersionRangeRequest request )
         {
             VersionRangeResult result = new VersionRangeResult( request );
             for ( VersionRepo vr : repositories )
@@ -302,7 +312,7 @@ final class DataPool
         }
     }
 
-    static final class ConstraintKey
+    private static final class ConstraintKey
     {
         private final Artifact artifact;
 
@@ -376,7 +386,7 @@ final class DataPool
         }
     }
 
-    static final class GraphKey
+    private static final class GraphKey
     {
         private final Artifact artifact;
 
