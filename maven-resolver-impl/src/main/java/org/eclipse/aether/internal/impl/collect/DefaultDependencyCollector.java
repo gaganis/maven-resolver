@@ -33,9 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import static java.util.Objects.requireNonNull;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -152,7 +150,7 @@ public class DefaultDependencyCollector
                 new LinkedBlockingQueue<Runnable>(), new WorkerThreadFactory( "artifact-descriptor-resolver" ) );
         try
         {
-            return collectDependenciesWithExecutor( session, request, executor );
+            return collectDependenciesWithExecutor( session, request );
         }
         finally
         {
@@ -160,8 +158,7 @@ public class DefaultDependencyCollector
         }
     }
 
-    private CollectResult collectDependenciesWithExecutor( RepositorySystemSession session, CollectRequest request,
-                                                           ExecutorService executor )
+    private CollectResult collectDependenciesWithExecutor( RepositorySystemSession session, CollectRequest request )
         throws DependencyCollectionException
     {
         session = DependencyCollectionUtils.optimizeSession( session );
@@ -180,7 +177,7 @@ public class DefaultDependencyCollector
         context.setCollectResult( result );
         context.setTrace( trace );
 
-        Args args = new Args( session, trace, null, null, context, null, request, executor );
+        Args args = new Args( session, trace, null, null, context, null, request, null );
         context.setArgs( args );
 
         Map<String, Object> stats = LOGGER.isDebugEnabled() ? new LinkedHashMap<String, Object>() : null;
@@ -233,7 +230,7 @@ public class DefaultDependencyCollector
 
             DefaultVersionFilterContext versionContext = new DefaultVersionFilterContext( session );
 
-            args = new Args( session, trace, pool, nodes, context, versionContext, request, executor );
+            args = new Args( session, trace, pool, nodes, context, versionContext, request, null );
             Results results = new Results( result, session );
             context.setArgs( args );
             context.setResults( results );
@@ -418,13 +415,7 @@ public class DefaultDependencyCollector
 
     private Future<DependencyContext> asyncProcessDependency( final DependencyContext dc )
     {
-        return dc.args.executor.submit( new Callable<DependencyContext>()
-        {
-            public DependencyContext call()
-            {
-                return processDependency( dc );
-            }
-        } );
+        return new FutureResult<>( processDependency( dc ) );
     }
 
     private DependencyContext processDependency( DependencyContext dc )
@@ -628,24 +619,18 @@ public class DefaultDependencyCollector
         Future<ArtifactDescriptorResult> descriptorResult = pool.getDescriptor( key, descriptorRequest );
         if ( descriptorResult == null )
         {
-            descriptorResult = args.executor.submit( new Callable<ArtifactDescriptorResult>()
+            ArtifactDescriptorResult result = null;
+            try
             {
-                public ArtifactDescriptorResult call()
-                {
-                    try
-                    {
-                        return descriptorReader.readArtifactDescriptor( session, descriptorRequest );
-                    }
-                    catch ( ArtifactDescriptorException e )
-                    {
-                        results.addException( d, e, args.nodes );
-                        pool.putDescriptor( key, e );
-                        return null;
-                    }
-                }
-            } );
+                result = descriptorReader.readArtifactDescriptor( session, descriptorRequest );
+            }
+            catch ( ArtifactDescriptorException e )
+            {
+                results.addException( d, e, args.nodes );
+                pool.putDescriptor( key, e );
+            }
 
-            pool.putDescriptor( key, descriptorResult );
+            pool.putDescriptor( key, new FutureResult<>( result ) );
         }
         else if ( descriptorResult == DataPool.NO_DESCRIPTOR )
         {
